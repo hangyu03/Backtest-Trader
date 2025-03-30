@@ -3,6 +3,7 @@ import os
 import warnings
 warnings.filterwarnings('ignore')
 
+
 def mark_signal_oneday(df_in_one_day):
     """
     For one day of data (i.e., a subset of instruments all on the same date),
@@ -28,13 +29,32 @@ def mark_signal_oneday(df_in_one_day):
 
     return df
 
-def main(result_file = "input/result0308v2.parquet", raw_file = "input/raw.parquet"):
+def main(
+    input_dir=None, 
+    output_dir=None,
+    result_file="result0308v2.parquet", 
+    raw_file="raw.parquet"
+):
 
-    # 1) Read and clean 'result' data
-    result = pd.read_parquet(result_file).drop(columns='ret', errors='ignore')
+    if input_dir is None or output_dir is None:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        if input_dir is None:
+            input_dir = os.path.join(base_dir, '..', 'input')
+        if output_dir is None:
+            output_dir = os.path.join(base_dir, '..', 'output')
 
-    # 2) Read and clean 'raw' data
-    all_data = pd.read_parquet(raw_file)
+    result_path = (
+        result_file 
+        if os.path.isabs(result_file) else os.path.join(input_dir, result_file)
+    )
+    raw_path = (
+        raw_file 
+        if os.path.isabs(raw_file) else os.path.join(input_dir, raw_file)
+    )
+
+    result = pd.read_parquet(result_path).drop(columns='ret', errors='ignore')
+
+    all_data = pd.read_parquet(raw_path)
     all_data = all_data.rename(columns={'ts_code': 'instrument', 'trade_date': 'Date'})
     all_data['instrument'] = all_data['instrument'].apply(
         lambda x: f"{x.split('.')[1]}{x.split('.')[0]}"
@@ -44,16 +64,17 @@ def main(result_file = "input/result0308v2.parquet", raw_file = "input/raw.parqu
 
     merged = pd.merge(all_data, result, on=['instrument', 'Date'], how='inner')
     merged = merged[['instrument', 'Date', 'close', 'pred']]
-
-    # 3) Group by date, assign signals (top 10% = +1, bottom 10% = -1)
     backtest = merged.groupby("Date", group_keys=False).apply(mark_signal_oneday)
     backtest = backtest.sort_values(["instrument", "Date"])
     backtest['signal'] = backtest.groupby('instrument')['signal'].shift(1)
     backtest.dropna(inplace=True)
-    os.makedirs('output', exist_ok=True)
-    backtest.to_csv('output/backtest.csv',index=False)
+
+    os.makedirs(output_dir, exist_ok=True)
+    out_path = os.path.join(output_dir, 'backtest.csv')
+    backtest.to_csv(out_path, index=False)
 
 
 if __name__ == "__main__":
     main()
+
     
