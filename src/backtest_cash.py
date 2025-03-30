@@ -329,7 +329,7 @@ class CashBacktestEngine:
 
 if __name__ == "__main__":
 
-    backtest_df = pd.read_csv('../output/backtest.csv')
+    backtest_df = pd.read_csv('output/backtest.csv')
     for cost in [True, False]:
         cash_backtest_engine = CashBacktestEngine(backtest_df=backtest_df, cost=cost)
         cash_backtest_engine.cash_main()
