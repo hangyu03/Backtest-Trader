@@ -12,31 +12,54 @@ class NetBacktestEngine:
     Class-based backtester for demonstration of OOP style.
     """
 
-    def __init__(self, backtest_df, cost=True, long_cost=0.0015, short_cost=0.003):
+    def __init__(self, 
+                 backtest_df, 
+                 cost=True, 
+                 long_cost=0.0015, 
+                 short_cost=0.003,
+                 input_dir=None, 
+                 output_dir=None):
         """
         Initialize backtester with user-provided signal DataFrame.
         
         Parameters
         ----------
-        backtest : pd.DataFrame
+        backtest_df : pd.DataFrame
             DataFrame containing columns ['Date', 'instrument', 'pred', 'close'] 
             for signals and prices.
         cost : bool, optional
             Whether to apply transaction costs (default True).
+        long_cost, short_cost : float
+            Transaction cost for long/short side if cost=True.
+        input_dir : str
+            Directory path to read auxiliary inputs like csi300.parquet.
+            If None, defaults to "<this_script_dir>/../input"
+        output_dir : str
+            Directory path to save outputs (plots etc.).
+            If None, defaults to "<this_script_dir>/../output"
         """
+        if input_dir is None or output_dir is None:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            if input_dir is None:
+                input_dir = os.path.join(base_dir, '..', 'input')
+            if output_dir is None:
+                output_dir = os.path.join(base_dir, '..', 'output')
+        self.input_dir = input_dir
+        self.output_dir = output_dir
+        
         self.backtest = backtest_df.copy()
         self.cost = cost
         self.long_cost = long_cost if cost else 0.0
         self.short_cost = short_cost if cost else 0.0
-        self.index_df = pd.read_parquet('input/csi300.parquet')
-
+        
+        csi300_file = os.path.join(self.input_dir, 'csi300.parquet')
+        self.index_df = pd.read_parquet(csi300_file)
 
     # ========== Metrics Calculation Methods ========== #
     @staticmethod
-    def calc_return_metrics(data, adj = 52):
+    def calc_return_metrics(data, adj=52):
         """
         Calculate annualized return metrics (Annual Return, Annual Vol, Annual Sharpe, Annual Sortino).
-        
         """
         summary = dict()
         summary["Annual Return"] = (data.mean() + 1) ** adj - 1
@@ -48,7 +71,7 @@ class NetBacktestEngine:
         return pd.DataFrame(summary, index=data.columns)
 
     @staticmethod
-    def calc_risk_metrics(data, var = 0.05):
+    def calc_risk_metrics(data, var=0.05):
         """
         Calculate risk metrics such as Skewness, Excess Kurtosis, VaR, CVaR, Max Drawdown.
         """
@@ -67,7 +90,7 @@ class NetBacktestEngine:
         return pd.DataFrame(summary, index=data.columns)
 
     @classmethod
-    def calc_performance_metrics(cls, data, adj = 52, var = 0.05):
+    def calc_performance_metrics(cls, data, adj=52, var=0.05):
         """
         Convenience method to combine return & risk metrics, plus Calmar ratio.
         """
@@ -84,12 +107,10 @@ class NetBacktestEngine:
         Identify discrete trades based on signal changes.
         """
         df = group.copy()
-
         # Identify changes in signal
         df['prev_signal'] = df['signal'].shift(fill_value=0)
         df['segment_id'] = (df['signal'] != df['prev_signal']).cumsum()
 
-        # Group by segments
         trades = []
         for _, seg_df in df.groupby('segment_id'):
             current_signal = seg_df['signal'].iloc[0]
@@ -153,14 +174,17 @@ class NetBacktestEngine:
         IC = signal.groupby('Date').apply(lambda x: x['real_ret'].corr(x['pred']))
         rolling_IC = IC.rolling(window=40).mean().dropna()
         rolling_IC.index = pd.to_datetime(rolling_IC.index)
+
         plt.title(f'Mean IC = {IC.mean().round(3)}', fontsize=22)
         plt.plot(rolling_IC, label='2-month Rolling IC', linewidth=2)
         plt.xlabel("Date", fontsize=14)
         plt.ylabel("Rolling IC", fontsize=14)
         plt.legend(fontsize=14)
         plt.grid()
-        os.makedirs('output', exist_ok=True)
-        plt.savefig('output/IC.png', dpi=300, bbox_inches='tight')
+
+        ic_path = os.path.join(self.output_dir, 'IC.png')
+        os.makedirs(self.output_dir, exist_ok=True)
+        plt.savefig(ic_path, dpi=300, bbox_inches='tight')
         plt.close()
 
     # ========== Main Driver Method ========== #
@@ -177,14 +201,17 @@ class NetBacktestEngine:
         self.backtest.dropna(inplace=True)
 
         desc_text = 'Computing Nets WITH Trading Costs' if self.cost else 'Computing Nets WITHOUT Trading Costs'
-        output_dir = 'output/with_cost' if self.cost else 'output/without_cost'
+        cost_dir = 'with_cost' if self.cost else 'without_cost'
+        output_dir = os.path.join(self.output_dir, cost_dir)
 
         for group_num in tqdm(range(4), desc=desc_text):
             nv, _ = self.process_single_day_backtest(group_num, self.backtest)
+
             plt.figure(figsize=(13, 8))
             plt.title(f'Group {group_num} Net Curve', fontsize=22)
             plt.xlabel('Time', fontsize=14)
             plt.ylabel('Net Value', fontsize=14)
+
             plt.text(
                 0.34, 0.955,
                 f'Long cost = {self.long_cost*100:.2f}%, Short cost = {self.short_cost*100:.2f}%',
@@ -192,13 +219,14 @@ class NetBacktestEngine:
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor="lightgray")
             )
             plt.plot(nv, label=f'Group {group_num} Net', linewidth=2)
+
             perf_df = self.calc_performance_metrics(nv.pct_change().dropna().to_frame()).rename(columns={0: 'Metrics'})
             idx_slice = (self.index_df.trade_date >= nv.index.min()) & \
                         (self.index_df.trade_date <= nv.index.max())
-            idx = self.index_df.copy()
-            idx = idx[idx_slice].set_index('trade_date')
-            index_net = (1 + idx.close.pct_change()).cumprod().fillna(1)
+            idx_tmp = self.index_df[idx_slice].copy().set_index('trade_date')
+            index_net = (1 + idx_tmp.close.pct_change()).cumprod().fillna(1)
             plt.plot(index_net, label='CSI300 benchmark', linewidth=2)
+
             cell_text = perf_df.values.round(3)
             row_labels = perf_df.index.tolist()
             the_table = plt.table(
@@ -218,18 +246,25 @@ class NetBacktestEngine:
             plt.tight_layout()
             plt.legend(fontsize=14, loc='lower left')
             plt.grid()
+
             os.makedirs(output_dir, exist_ok=True)
             if self.cost:
-                plt.savefig(os.path.join(output_dir, f'group{group_num}_net_value_plot.png'), dpi=300, bbox_inches='tight')
+                png_name = f'group{group_num}_net_value_plot.png'
             else:
-                plt.savefig(os.path.join(output_dir, f'group{group_num}_net_value_plot_without_trading_costs.png'), dpi=300, bbox_inches='tight')
+                png_name = f'group{group_num}_net_value_plot_without_trading_costs.png'
+
+            plt.savefig(os.path.join(output_dir, png_name), dpi=300, bbox_inches='tight')
             plt.close()
+
         self.plot_IC(self.backtest)
 
 
 if __name__ == "__main__":
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    backtest_file = os.path.join(base_dir, '..', 'output', 'backtest.csv')
+    backtest_df = pd.read_csv(backtest_file)
 
-    backtest_df = pd.read_csv('output/backtest.csv')
     for cost in [True, False]:
-        cash_backtest_engine = NetBacktestEngine(backtest_df=backtest_df, cost=cost)
-        cash_backtest_engine.net_main()
+        engine = NetBacktestEngine(backtest_df=backtest_df, cost=cost)
+        engine.net_main()
+        
