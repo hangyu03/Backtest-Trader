@@ -12,7 +12,7 @@
       - **Bottom 10%**: go short  
       Positions are closed exactly 4 trading days later.
 
-   2) Because we open new positions every day and each position is held for 4 days, there are effectively **4 overlapping branches** of positions (one for each weekday). Each branch is closed on its corresponding day in the next week.
+   2) Because we open new positions every day and each position is held for 4 days, there are effectively **4 overlapping branches** of positions.
 
    3) If a position's direction (long/short) for a given asset does not change from day to day, we continue to hold it rather than re-enter. 
 
