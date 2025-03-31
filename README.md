@@ -1,11 +1,20 @@
-1. **Installation and Execution** (takes about **15 seconds**):
+# Backtest-Trader
+
+## 1. **Installation and Execution** (takes about **15 seconds**):
 
    ```bash
    cd /path/to/project
    pip install -r requirements.txt
    python -m doit -n 2 all
+   ```
 
-2. **Backtest Logic** (see **backtest_cash.py** and **backtest_net.py** for implementation details)
+**Note**: If **doit** is already added to your PATH, you can run:
+
+   ```bash
+   doit -n 2 all
+   ```
+
+## 2. **Backtest Logic** (see **backtest_cash.py** and **backtest_net.py** for implementation details)
 
    1) Each trading day, we rank stocks by the previous day's signal value. 
       - **Top 10%**: go long  
