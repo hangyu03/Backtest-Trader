@@ -1,9 +1,9 @@
-1. **Installation and Execution** (takes about **30 seconds**):
+1. **Installation and Execution** (takes about **15 seconds**):
 
    ```bash
    cd /path/to/project
    pip install -r requirements.txt
-   python -m doit
+   python -m doit -n 2 all
 
 2. **Backtest Logic** (see **backtest_cash.py** and **backtest_net.py** for implementation details)
 
